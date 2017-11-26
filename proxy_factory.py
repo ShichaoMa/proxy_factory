@@ -18,7 +18,7 @@ from argparse import ArgumentParser
 from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext, common_stop_start_control
 
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 
 def exception_wrapper(func):

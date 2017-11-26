@@ -5,7 +5,7 @@ except:
     from distutils.core import setup
 
 
-VERSION = '0.0.5'
+VERSION = '0.0.6'
 
 AUTHOR = "cn"
 
@@ -26,7 +26,7 @@ KEYWORDS = "anonymous proxies proxy"
 
 LICENSE = "MIT"
 
-MODULES = ["proxy_factory"]
+MODULES = ["proxy_factory", "settings"]
 
 setup(
     name = NAME,
