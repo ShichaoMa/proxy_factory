@@ -15,10 +15,10 @@ from urllib.parse import urljoin
 from os.path import dirname, join
 from functools import reduce, wraps
 from argparse import ArgumentParser
-from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext
+from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext, common_stop_start_control
 
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 
 def exception_wrapper(func):
@@ -450,7 +450,8 @@ class ProxyFactory(MultiMonitor):
     def parse_args(cls):
         parser = ArgumentParser("proxy factory")
         parser.add_argument("-s", "--settings", default="settings.py")
-        return cls(vars(parser.parse_args()))
+        args = common_stop_start_control(parser, '/dev/null')
+        return cls(args.settings)
 
 
 def main():
