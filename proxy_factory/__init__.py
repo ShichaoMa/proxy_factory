@@ -19,7 +19,7 @@ from argparse import ArgumentParser
 from . import settings as default_settings
 from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext, common_stop_start_control
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
 
 def exception_wrapper(func):
@@ -38,7 +38,7 @@ def exception_wrapper(func):
 class ProxyFactory(MultiMonitor):
     name = "proxy_factory"
     setting_wrapper = SettingsWrapper()
-
+    currenet_path = getcwd()
     headers = {
         'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:41.0) Gecko/20100101 Firefox/41.0',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -51,7 +51,7 @@ class ProxyFactory(MultiMonitor):
             初始化logger, redis_conn
         """
         super(ProxyFactory, self).__init__()
-        sys.path.index(getcwd(), 0)
+        sys.path.insert(0, self.currenet_path)
         self.settings = self.setting_wrapper.load(settings, default_settings)
         self.logger = Logger.init_logger(self.settings, name=self.name)
         self.proxies_check_in_queue = Queue()
