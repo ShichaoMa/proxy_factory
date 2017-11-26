@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 import re
+import sys
 import time
 import requests
 import traceback
 import pytesseract
+import settings as default_settings
 
+from os import getcwd
 from PIL import Image
 from io import BytesIO
 from redis import Redis
@@ -12,13 +15,12 @@ from threading import Thread
 from bs4 import BeautifulSoup
 from queue import Queue, Empty
 from urllib.parse import urljoin
-from os.path import dirname, join
 from functools import reduce, wraps
 from argparse import ArgumentParser
 from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext, common_stop_start_control
 
 
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 
 def exception_wrapper(func):
@@ -35,6 +37,7 @@ def exception_wrapper(func):
 
 class ProxyFactory(MultiMonitor):
 
+    name = "proxy_factory"
     setting_wrapper = SettingsWrapper()
 
     headers = {
@@ -49,8 +52,9 @@ class ProxyFactory(MultiMonitor):
             初始化logger, redis_conn
         """
         super(ProxyFactory, self).__init__()
-        self.settings = self.setting_wrapper.load(settings, join(dirname(__file__), "settings.py"))
-        self.logger = Logger.init_logger(self.settings, name="proxy_factory")
+        sys.path.index(getcwd(), 0)
+        self.settings = self.setting_wrapper.load(settings, default_settings)
+        self.logger = Logger.init_logger(self.settings, name=self.name)
         self.proxies_check_in_queue = Queue()
         self.proxies_check_out_queue = Queue()
         self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get("REDIS_PORT"))
@@ -449,7 +453,7 @@ class ProxyFactory(MultiMonitor):
     @classmethod
     def parse_args(cls):
         parser = ArgumentParser("proxy factory")
-        parser.add_argument("-s", "--settings", default="settings.py")
+        parser.add_argument("-s", "--settings", help="local settings. ", default="localsettings")
         args = common_stop_start_control(parser, '/dev/null')
         return cls(args.settings)
 
