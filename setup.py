@@ -26,7 +26,7 @@ KEYWORDS = "anonymous proxies proxy"
 
 LICENSE = "MIT"
 
-PACKAGES = ["proxy_factory"]
+MODULES = ["proxy_factory"]
 
 setup(
     name = NAME,
@@ -49,7 +49,7 @@ setup(
     author_email = AUTHOR_EMAIL,
     url = URL,
     license = LICENSE,
-    packages = PACKAGES,
+    py_modules=MODULES,
     install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkit"],
     include_package_data=True,
     zip_safe=True,
