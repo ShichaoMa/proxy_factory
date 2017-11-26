@@ -18,7 +18,7 @@ from argparse import ArgumentParser
 from toolkit import SettingsWrapper, Logger, MultiMonitor
 
 
-__version__ = "0.0.1"
+__version__ = "0.0.3"
 
 
 class SleepManager(object):
