@@ -19,7 +19,7 @@ from argparse import ArgumentParser
 from . import settings as default_settings
 from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext, common_stop_start_control
 
-__version__ = "0.0.8"
+__version__ = "0.1.0"
 
 
 def exception_wrapper(func):
@@ -127,7 +127,7 @@ class ProxyFactory(MultiMonitor):
         url_tmpl = "http://www.kxdaili.com/dailiip/1/%d.html"
         for page_num in range(page):
             url = url_tmpl % (page_num + 1)
-            soup = BeautifulSoup(self.get_html(url), "lxml")
+            soup = BeautifulSoup(self.get_html(url), "html")
             table_tag = soup.find("table", attrs={"class": "segment"})
             trs = table_tag.tbody.find_all("tr")
             for tr in trs:
@@ -147,7 +147,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://proxy.mimvp.com/free.php?proxy=in_hp"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         tds = soup.select("tbody > td")
         for i in range(0, len(tds), 10):
             ip = tds[i + 1].text
@@ -162,7 +162,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://www.xicidaili.com/nn/"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         table = soup.find("table", attrs={"id": "ip_list"})
         trs = table.find_all("tr")
         for i in range(1, len(trs)):
@@ -180,7 +180,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://www.nianshao.me/"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         table = soup.find("table", attrs={"class": "table"})
         trs = table.find_all("tr")
         for i in range(1, len(trs)):
@@ -198,7 +198,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://www.ip181.com/"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         table = soup.find("table")
         trs = table.find_all("tr")
         for i in range(1, len(trs)):
@@ -216,7 +216,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://www.httpdaili.com/mfdl/"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         trs = soup.select(".kb-item-wrap11 tr")
 
         for i in range(len(trs)):
@@ -237,7 +237,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://www.66ip.cn/areaindex_15/1.html"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         table = soup.find("table", attrs={"border": "2px"})
         trs = table.find_all("tr")
         for i in range(1, len(trs)):
@@ -256,7 +256,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://cn-proxy.com/"
-        soup = BeautifulSoup(self.get_html(url, proxies={"http": "http://192.168.200.51:8123"}), "lxml")
+        soup = BeautifulSoup(self.get_html(url, proxies={"http": "http://192.168.200.51:8123"}), "html")
         trs = soup.select("tr")
         for i in range(2, len(trs)):
             tds = trs[i].find_all("td")
@@ -276,7 +276,7 @@ class ProxyFactory(MultiMonitor):
         """
         proxies = set()
         url = "http://www.66ip.cn/areaindex_15/1.html"
-        soup = BeautifulSoup(self.get_html(url), "lxml")
+        soup = BeautifulSoup(self.get_html(url), "html")
         trs = soup.select("tr")
         for i in range(4, len(trs)):
             tds = trs[i].find_all("td")
@@ -306,7 +306,7 @@ class ProxyFactory(MultiMonitor):
         url_tmpl = "http://www.goubanjia.com/index%s.shtml"
         for page_num in range(page):
             url = url_tmpl % (page_num + 1)
-            soup = BeautifulSoup(self.get_html(url), "lxml")
+            soup = BeautifulSoup(self.get_html(url), "html")
             trs = soup.select("tbody > tr")
             for tr in trs:
                 tds = tr.find_all("td")
