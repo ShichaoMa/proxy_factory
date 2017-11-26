@@ -15,47 +15,10 @@ from urllib.parse import urljoin
 from os.path import dirname, join
 from functools import reduce, wraps
 from argparse import ArgumentParser
-from toolkit import SettingsWrapper, Logger, MultiMonitor
+from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext
 
 
-__version__ = "0.0.3"
-
-
-class SleepManager(object):
-
-    def __init__(self, sleep_time, instance, interval=1, notify=lambda x: x.alive):
-        self.sleep_time = sleep_time
-        self.instance = instance
-        self.interval = interval
-        self.notify = notify
-        self.enter_time = time.time()
-        self.is_notified = True
-
-    def __enter__(self):
-        while time.time() - self.enter_time < self.sleep_time and self.notify(self.instance):
-            time.sleep(self.interval)
-        self.is_notified = self.notify(self.instance)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return exc_type is None
-
-
-class ExceptContext(object):
-        def __init__(self, errback, exception, func_name=None):
-            self.errback = errback
-            self.exception = exception
-            self.func_name = func_name
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            if isinstance(exc_val, self.exception):
-                self.errback(exc_type, exc_val, exc_tb, self.func_name)
-                return True
-            else:
-                return False
+__version__ = "0.0.4"
 
 
 def exception_wrapper(func):
@@ -490,5 +453,9 @@ class ProxyFactory(MultiMonitor):
         return cls(vars(parser.parse_args()))
 
 
-if __name__ == '__main__':
+def main():
     ProxyFactory.parse_args().start()
+
+
+if __name__ == '__main__':
+    main()
