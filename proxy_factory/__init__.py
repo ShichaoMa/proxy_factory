@@ -14,12 +14,18 @@ from threading import Thread
 from bs4 import BeautifulSoup
 from queue import Queue, Empty
 from urllib.parse import urljoin
-from functools import reduce, wraps
 from argparse import ArgumentParser
-from . import settings as default_settings
-from toolkit import SettingsWrapper, Logger, MultiMonitor, SleepManager, ExceptContext, common_stop_start_control
+from functools import reduce, wraps, partial
 
-__version__ = "0.1.0"
+from toolkit.logger import Logger
+from toolkit.settings import SettingsWrapper
+from toolkit.mutil_monitor import MultiMonitor
+from toolkit.manager import SleepManager, ExceptContext
+from toolkit.daemon_ctl import common_stop_start_control
+
+from . import settings as default_settings
+
+__version__ = "0.1.3"
 
 
 def exception_wrapper(func):
@@ -38,7 +44,7 @@ def exception_wrapper(func):
 class ProxyFactory(MultiMonitor):
     name = "proxy_factory"
     setting_wrapper = SettingsWrapper()
-    currenet_path = getcwd()
+    current_dir = getcwd()
     headers = {
         'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:41.0) Gecko/20100101 Firefox/41.0',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -46,17 +52,20 @@ class ProxyFactory(MultiMonitor):
         "Accept-Encoding": "gzip, deflate",
     }
 
-    def __init__(self, settings):
+    def __init__(self, settings, check_method=None):
         """
             初始化logger, redis_conn
         """
         super(ProxyFactory, self).__init__()
-        sys.path.insert(0, self.currenet_path)
+        sys.path.insert(0, self.current_dir)
         self.settings = self.setting_wrapper.load(settings, default_settings)
         self.logger = Logger.init_logger(self.settings, name=self.name)
         self.proxies_check_in_queue = Queue()
         self.proxies_check_out_queue = Queue()
-        self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get("REDIS_PORT"))
+        self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get_int("REDIS_PORT"))
+        if check_method:
+            mod_str, _sep, call_str = check_method.rpartition('.')
+            self.check_method = partial(getattr(__import__(mod_str), call_str), self)
 
     def get_html(self, url, proxies=None):
         """
@@ -317,26 +326,26 @@ class ProxyFactory(MultiMonitor):
                     proxies.add("%s:%s" % (ip, port))
         return proxies
 
+    def check_method(self, proxy):
+        resp = requests.get(
+            "http://www.whatismyip.com.tw/", headers=self.headers, timeout=10,
+            proxies={"http": "http://%s" % proxy})
+        ip, real_ip = re.search(r'"ip": "(.*?)"[\s\S]+"ip-real": "(.*?)",', resp.text).groups()
+        self.logger.debug("IP: %s. Real IP: %s. Proxy: %s" % (ip, real_ip, proxy))
+        return resp.status_code < 300 and not real_ip
+
     def check(self, proxy, good):
         """
             检查代理是否可用
         """
-        try:
-            resp = requests.get(
-                "http://www.whatismyip.com.tw/", headers=self.headers, timeout=10,
-                proxies={"http": "http://%s" % proxy})
-            # self.logger.debug("proxy: %s,resposne code: %s" % (proxy, resp.status_code))
-            ip, real_ip = re.search(r'"ip": "(.*?)"[\s\S]+"ip-real": "(.*?)",', resp.text).groups()
-            self.logger.debug("IP: %s. Real IP: %s. Proxy: %s" % (ip, real_ip, proxy))
-            if resp.status_code < 300 and not real_ip:
+        with ExceptContext(Exception, errback=lambda *args: False):
+            if self.check_method(proxy):
                 good.append(proxy)
-        except Exception as e:
-            return False
 
     def check_proxies(self):
         self.logger.debug("Start check thread. ")
         while self.alive:
-            with ExceptContext(self.log_err, Exception, "check_proxies"):
+            with ExceptContext(Exception, errback=self.log_err):
                 try:
                     proxies = self.proxies_check_in_queue.get_nowait()
                 except Empty:
@@ -345,14 +354,16 @@ class ProxyFactory(MultiMonitor):
                     self.logger.debug("Got %s proxies to check. " % len(proxies))
                     proxies = [proxy.decode() if isinstance(proxy, bytes) else proxy for proxy in proxies]
                     good = list()
-                    thread_list = []
-                    for proxy in proxies:
-                        th = Thread(target=self.check, args=(proxy, good))
-                        th.start()
-                        thread_list.append(th)
+                    for i in range(0, len(proxies), 50):
+                        # 分批检查
+                        thread_list = []
+                        for proxy in proxies[i: i+50]:
+                            th = Thread(target=self.check, args=(proxy, good))
+                            th.start()
+                            thread_list.append(th)
 
-                    for thread in thread_list:
-                        thread.join()
+                        for thread in thread_list:
+                            thread.join()
                     self.logger.debug("%s proxies is good. " % (len(good)))
                     self.proxies_check_out_queue.put(dict((proxy, proxy in good) for proxy in proxies))
                 else:
@@ -362,15 +373,15 @@ class ProxyFactory(MultiMonitor):
     def bad_source(self):
         self.logger.debug("Start bad source thread. ")
         while self.alive:
-            with SleepManager(self.settings.get("BAD_CHECK_INTERVAL", 60 * 5), self) as sm:
+            with SleepManager(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5), self) as sm:
                 if not sm.is_notified:
                     continue
-                with ExceptContext(self.log_err, Exception, "bad_source"):
+                with ExceptContext(Exception, errback=self.log_err):
                     proxies = self.redis_conn.hgetall("bad_proxies")
                     if proxies:
                         self.logger.debug("Bad proxy count is : %s, ready to check. " % len(proxies))
                         for proxy, times in proxies.items():
-                            if int(times) > self.settings.get("FAILED_TIMES", 5):
+                            if int(times) > self.settings.get_int("FAILED_TIMES", 5):
                                 self.redis_conn.hdel("bad_proxies", proxy)
                                 self.logger.debug("Abandon %s of failed for %s times. " % (proxy, times))
                         self.proxies_check_in_queue.put(proxies.keys())
@@ -378,10 +389,10 @@ class ProxyFactory(MultiMonitor):
     def good_source(self):
         self.logger.debug("Start good source thread. ")
         while self.alive:
-            with SleepManager(self.settings.get("GOOD_CHECK_INTERVAL", 60 * 5), self) as sm:
+            with SleepManager(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5), self) as sm:
                 if not sm.is_notified:
                     continue
-                with ExceptContext(self.log_err, Exception, "good_source"):
+                with ExceptContext(Exception, errback=self.log_err):
                     proxies = self.redis_conn.smembers("good_proxies")
                     if proxies:
                         self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
@@ -390,7 +401,7 @@ class ProxyFactory(MultiMonitor):
     def reset_proxies(self):
         self.logger.debug("Start resets thread. ")
         while self.alive:
-            with ExceptContext(self.log_err, Exception, "reset_proxies"):
+            with ExceptContext(Exception, errback=self.log_err):
                 try:
                     proxies = self.proxies_check_out_queue.get_nowait()
                 except Empty:
@@ -421,10 +432,10 @@ class ProxyFactory(MultiMonitor):
         self.gen_thread(self.good_source)
         self.gen_thread(self.reset_proxies)
         while self.alive or [thread for thread in self.children if thread.is_alive()]:
-            with SleepManager(self.settings.get("FETCH_INTERVAL", 10 * 60), self) as sm:
+            with SleepManager(self.settings.get_int("FETCH_INTERVAL", 10 * 60), self) as sm:
                 if not sm.is_notified:
                     continue
-                with ExceptContext(self.log_err, Exception, "main"):
+                with ExceptContext(Exception, errback=self.log_err):
                     if self.alive:
                         self.logger.debug("Start to fetch proxies. ")
                         proxies = self.fetch_all()
@@ -455,8 +466,9 @@ class ProxyFactory(MultiMonitor):
     def parse_args(cls):
         parser = ArgumentParser("proxy factory")
         parser.add_argument("-s", "--settings", help="local settings. ", default="localsettings")
+        parser.add_argument("-cm", "--check-method", help="proivde a check method to check proxies. eg:module.func")
         args = common_stop_start_control(parser, '/dev/null')
-        return cls(args.settings)
+        return cls(args.settings, args.check_method)
 
 
 def main():

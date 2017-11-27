@@ -5,7 +5,7 @@ except:
     from distutils.core import setup
 
 
-VERSION = '0.1.0'
+VERSION = '0.1.3'
 
 AUTHOR = "cn"
 
@@ -29,10 +29,10 @@ LICENSE = "MIT"
 PACKAGES = ["proxy_factory"]
 
 setup(
-    name = NAME,
-    version = VERSION,
-    description = DESCRIPTION,
-    long_description = LONG_DESCRIPTION,
+    name=NAME,
+    version=VERSION,
+    description=DESCRIPTION,
+    long_description=LONG_DESCRIPTION,
     classifiers=[
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
@@ -44,13 +44,13 @@ setup(
             'product = proxy_factory:main',
         ],
     },
-    keywords = KEYWORDS,
-    author = AUTHOR,
-    author_email = AUTHOR_EMAIL,
-    url = URL,
-    license = LICENSE,
+    keywords=KEYWORDS,
+    author=AUTHOR,
+    author_email=AUTHOR_EMAIL,
+    url=URL,
+    license=LICENSE,
     packages=PACKAGES,
-    install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkity"],
+    install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkity>=1.1.1"],
     include_package_data=True,
     zip_safe=True,
 )

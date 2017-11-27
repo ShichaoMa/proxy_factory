@@ -3,4 +3,4 @@ pytesseract
 pillow
 redis
 bs4
-toolkity
+toolkity>=1.1.1
