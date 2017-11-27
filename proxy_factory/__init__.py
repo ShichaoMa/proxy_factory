@@ -4,41 +4,26 @@ import sys
 import time
 import requests
 import traceback
-import pytesseract
 
 from os import getcwd
-from PIL import Image
-from io import BytesIO
 from redis import Redis
 from threading import Thread
-from bs4 import BeautifulSoup
 from queue import Queue, Empty
-from urllib.parse import urljoin
 from argparse import ArgumentParser
-from functools import reduce, wraps, partial
+from functools import partial
 
+from toolkit import load_function, load_module
 from toolkit.logger import Logger
 from toolkit.settings import SettingsWrapper
 from toolkit.mutil_monitor import MultiMonitor
 from toolkit.manager import SleepManager, ExceptContext
 from toolkit.daemon_ctl import common_stop_start_control
 
+from . import proxy_site_spider
 from . import settings as default_settings
+from .utils import exception_wrapper
 
-__version__ = "0.1.3"
-
-
-def exception_wrapper(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        self = args[0]
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            self.logger.warn("failed in %s: %s" % (func.__name__, e))
-            return set()
-
-    return wrapper
+__version__ = "0.1.6"
 
 
 class ProxyFactory(MultiMonitor):
@@ -52,7 +37,7 @@ class ProxyFactory(MultiMonitor):
         "Accept-Encoding": "gzip, deflate",
     }
 
-    def __init__(self, settings, check_method=None):
+    def __init__(self, settings, fetch_modules=None, check_method=None):
         """
             初始化logger, redis_conn
         """
@@ -62,10 +47,21 @@ class ProxyFactory(MultiMonitor):
         self.logger = Logger.init_logger(self.settings, name=self.name)
         self.proxies_check_in_queue = Queue()
         self.proxies_check_out_queue = Queue()
+        self.load_site(proxy_site_spider)
+        self.load_site(fetch_modules)
         self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get_int("REDIS_PORT"))
         if check_method:
-            mod_str, _sep, call_str = check_method.rpartition('.')
-            self.check_method = partial(getattr(__import__(mod_str), call_str), self)
+            self.check_method = partial(load_function(check_method), self)
+
+    def load_site(self, module_str):
+        if module_str:
+            if isinstance(module_str, str):
+                mod = load_module(module_str)
+            else:
+                mod = module_str
+            for key, func in vars(mod).items():
+                if key.startswith("fetch"):
+                    self.__dict__[key] = partial(exception_wrapper(func), self)
 
     def get_html(self, url, proxies=None):
         """
@@ -78,253 +74,6 @@ class ProxyFactory(MultiMonitor):
         for chunk in requests.get(url, headers=self.headers, stream=True).iter_content(1024):
             buffer += chunk
         return buffer
-
-    def parse_port(self, url):
-        with Image.open(BytesIO(self.download(url))) as image:
-            image = image.convert("RGB")
-            gray_image = Image.new('1', image.size)
-            width, height = image.size
-            raw_data = image.load()
-            image.close()
-            for x in range(width):
-                for y in range(height):
-                    value = raw_data[x, y]
-                    value = value[0] if isinstance(value, tuple) else value
-                    if value < 1:
-                        gray_image.putpixel((x, y), 0)
-                    else:
-                        gray_image.putpixel((x, y), 255)
-            num = pytesseract.image_to_string(gray_image)
-            result = self.guess(num)
-            if result:
-                return result
-            else:
-                new_char = list()
-                for i in num:
-                    if i.isdigit():
-                        new_char.append(i)
-                    else:
-                        new_char.append(self.guess(i))
-                return "".join(new_char)
-
-    @staticmethod
-    def guess(word):
-        try:
-            mapping = {
-                "b": "8",
-                "o": "0",
-                "e": "8",
-                "s": "9",
-                "a": "9",
-                "51234": "61234",
-                "3737": "9797",
-                "3000": "9000",
-                "52385": "62386",
-            }
-            return mapping[word.lower()]
-        except KeyError:
-            if len(word) == 1:
-                print(word)
-            return word
-
-    @exception_wrapper
-    def fetch_kxdaili(self, page=1):
-        """
-        从www.kxdaili.com抓取免费代理
-        """
-        proxies = set()
-        url_tmpl = "http://www.kxdaili.com/dailiip/1/%d.html"
-        for page_num in range(page):
-            url = url_tmpl % (page_num + 1)
-            soup = BeautifulSoup(self.get_html(url), "html")
-            table_tag = soup.find("table", attrs={"class": "segment"})
-            trs = table_tag.tbody.find_all("tr")
-            for tr in trs:
-                tds = tr.find_all("td")
-                ip = tds[0].text
-                port = tds[1].text
-                latency = tds[4].text.split(" ")[0]
-                if float(latency) < 0.5:  # 输出延迟小于0.5秒的代理
-                    proxy = "%s:%s" % (ip, port)
-                    proxies.add(proxy)
-        return proxies
-
-    @exception_wrapper
-    def fetch_mimvp(self):
-        """
-        从http://proxy.mimvp.com/free.php抓免费代理
-        """
-        proxies = set()
-        url = "http://proxy.mimvp.com/free.php?proxy=in_hp"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        tds = soup.select("tbody > td")
-        for i in range(0, len(tds), 10):
-            ip = tds[i + 1].text
-            port = self.parse_port(urljoin(url, tds[i + 2].img["src"]))
-            proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @exception_wrapper
-    def fetch_xici(self):
-        """
-        http://www.xicidaili.com/nn/
-        """
-        proxies = set()
-        url = "http://www.xicidaili.com/nn/"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        table = soup.find("table", attrs={"id": "ip_list"})
-        trs = table.find_all("tr")
-        for i in range(1, len(trs)):
-            tr = trs[i]
-            tds = tr.find_all("td")
-            ip = tds[1].text
-            port = tds[2].text
-            proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @exception_wrapper
-    def fetch_nianshao(self):
-        """
-        http://www.nianshao.com/
-        """
-        proxies = set()
-        url = "http://www.nianshao.me/"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        table = soup.find("table", attrs={"class": "table"})
-        trs = table.find_all("tr")
-        for i in range(1, len(trs)):
-            tr = trs[i]
-            tds = tr.find_all("td")
-            ip = tds[0].text
-            port = tds[1].text
-            proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @exception_wrapper
-    def fetch_ip181(self):
-        """
-        http://www.ip181.com/
-        """
-        proxies = set()
-        url = "http://www.ip181.com/"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        table = soup.find("table")
-        trs = table.find_all("tr")
-        for i in range(1, len(trs)):
-            tds = trs[i].find_all("td")
-            ip = tds[0].text
-            port = tds[1].text
-            proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @exception_wrapper
-    def fetch_httpdaili(self):
-        """
-        http://www.httpdaili.com/mfdl/
-        更新比较频繁
-        """
-        proxies = set()
-        url = "http://www.httpdaili.com/mfdl/"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        trs = soup.select(".kb-item-wrap11 tr")
-
-        for i in range(len(trs)):
-            tds = trs[i].find_all("td")
-            if len(tds) > 2 and tds[1].text.isdigit():
-                ip = tds[0].text
-                port = tds[1].text
-                type = tds[2].text
-                if type.encode("iso-8859-1").decode("utf-8") == "匿名":
-                    proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @exception_wrapper
-    def fetch_66ip_sd(self):
-        """
-        http://www.66ip.cn/areaindex_15/1.html
-        @return:
-        """
-        proxies = set()
-        url = "http://www.66ip.cn/areaindex_15/1.html"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        table = soup.find("table", attrs={"border": "2px"})
-        trs = table.find_all("tr")
-        for i in range(1, len(trs)):
-            tds = trs[i].find_all("td")
-            ip = tds[0].text
-            port = tds[1].text
-            type = tds[3].text
-            if type.encode("iso-8859-1").decode("gbk") == "高匿代理":
-                proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @exception_wrapper
-    def fetch_cn_proxy(self):
-        """
-        http://cn-proxy.com/
-        """
-        proxies = set()
-        url = "http://cn-proxy.com/"
-        soup = BeautifulSoup(self.get_html(url, proxies={"http": "http://192.168.200.51:8123"}), "html")
-        trs = soup.select("tr")
-        for i in range(2, len(trs)):
-            tds = trs[i].find_all("td")
-            try:
-                ip = tds[0].text
-                port = tds[1].text
-                if port.isdigit():
-                    proxies.add("%s:%s" % (ip, port))
-            except IndexError:
-                pass
-        return proxies
-
-    @exception_wrapper
-    def fetch_66ip(self):
-        """
-        http://www.66ip.cn/areaindex_15/1.html
-        """
-        proxies = set()
-        url = "http://www.66ip.cn/areaindex_15/1.html"
-        soup = BeautifulSoup(self.get_html(url), "html")
-        trs = soup.select("tr")
-        for i in range(4, len(trs)):
-            tds = trs[i].find_all("td")
-            ip = tds[0].text
-            port = tds[1].text
-            proxies.add("%s:%s" % (ip, port))
-        return proxies
-
-    @staticmethod
-    def parse_class(cls):
-        """
-        隐藏的解码函数
-        :param cls:
-        :return:
-        """
-        meta = dict(zip("ABCDEFGHIZ", range(10)))
-        num = reduce(lambda x, y: x + str(meta.get(y)), cls, "")
-        return int(num) >> 3
-
-    @exception_wrapper
-    def fetch_goubanjia(self, page=1):
-        """
-        http://www.goubanjia.com/
-        :return:
-        """
-        proxies = set()
-        url_tmpl = "http://www.goubanjia.com/index%s.shtml"
-        for page_num in range(page):
-            url = url_tmpl % (page_num + 1)
-            soup = BeautifulSoup(self.get_html(url), "html")
-            trs = soup.select("tbody > tr")
-            for tr in trs:
-                tds = tr.find_all("td")
-                ip = "".join(re.findall(r"(?<!none;\")>(.*?)<", str(tds[0]))).split(":")[0]
-                port = self.parse_class(tds[0].select(".port")[0]["class"][-1])
-                type = tds[1].a.text
-                if type.count("匿"):
-                    proxies.add("%s:%s" % (ip, port))
-        return proxies
 
     def check_method(self, proxy):
         resp = requests.get(
@@ -354,10 +103,10 @@ class ProxyFactory(MultiMonitor):
                     self.logger.debug("Got %s proxies to check. " % len(proxies))
                     proxies = [proxy.decode() if isinstance(proxy, bytes) else proxy for proxy in proxies]
                     good = list()
-                    for i in range(0, len(proxies), 50):
+                    for i in range(0, len(proxies), 150):
                         # 分批检查
                         thread_list = []
-                        for proxy in proxies[i: i+50]:
+                        for proxy in proxies[i: i+150]:
                             th = Thread(target=self.check, args=(proxy, good))
                             th.start()
                             thread_list.append(th)
@@ -431,8 +180,9 @@ class ProxyFactory(MultiMonitor):
         self.gen_thread(self.bad_source)
         self.gen_thread(self.good_source)
         self.gen_thread(self.reset_proxies)
+        is_started = False
         while self.alive or [thread for thread in self.children if thread.is_alive()]:
-            with SleepManager(self.settings.get_int("FETCH_INTERVAL", 10 * 60), self) as sm:
+            with SleepManager(self.settings.get_int("FETCH_INTERVAL", 10 * 60), self, immediately=not is_started) as sm:
                 if not sm.is_notified:
                     continue
                 with ExceptContext(Exception, errback=self.log_err):
@@ -441,6 +191,7 @@ class ProxyFactory(MultiMonitor):
                         proxies = self.fetch_all()
                         self.logger.debug("%s proxies found. " % len(proxies))
                         self.proxies_check_in_queue.put(proxies)
+            is_started = True
 
     def log_err(self, exc_type, exc_val, exc_tb, func_name):
         self.logger.error(
@@ -451,15 +202,9 @@ class ProxyFactory(MultiMonitor):
             获取全部网站代理，内部调用各网站代理获取函数
         """
         proxies = set()
-        proxies.update(self.fetch_kxdaili(3))
-        proxies.update(self.fetch_mimvp())
-        proxies.update(self.fetch_xici())
-        proxies.update(self.fetch_ip181())
-        proxies.update(self.fetch_httpdaili())
-        proxies.update(self.fetch_66ip())
-        proxies.update(self.fetch_66ip_sd())
-        proxies.update(self.fetch_nianshao())
-        proxies.update(self.fetch_goubanjia(5))
+        for key, value in self.__dict__.items():
+            if key.startswith("fetch"):
+                proxies.update(value())
         return proxies
 
     @classmethod
@@ -467,8 +212,10 @@ class ProxyFactory(MultiMonitor):
         parser = ArgumentParser("proxy factory")
         parser.add_argument("-s", "--settings", help="local settings. ", default="localsettings")
         parser.add_argument("-cm", "--check-method", help="proivde a check method to check proxies. eg:module.func")
+        parser.add_argument("-sm", "--spider-module",
+                            help="proivde a module contains proxy site spider methods. eg:module1.module2")
         args = common_stop_start_control(parser, '/dev/null')
-        return cls(args.settings, args.check_method)
+        return cls(args.settings, args.spider_module, args.check_method)
 
 
 def main():
