@@ -23,7 +23,7 @@ from . import proxy_site_spider
 from . import settings as default_settings
 from .utils import exception_wrapper
 
-__version__ = "0.1.6"
+__version__ = "0.1.8"
 
 
 class ProxyFactory(MultiMonitor):
@@ -108,16 +108,20 @@ class ProxyFactory(MultiMonitor):
                         thread_list = []
                         for proxy in proxies[i: i+150]:
                             th = Thread(target=self.check, args=(proxy, good))
+                            th.setDaemon(True)
                             th.start()
                             thread_list.append(th)
 
-                        for thread in thread_list:
-                            thread.join()
+                        start_time = time.time()
+                        while [thread for thread in thread_list if thread.is_alive()] and start_time + 60 > time.time():
+                            time.sleep(1)
+
                     self.logger.debug("%s proxies is good. " % (len(good)))
                     self.proxies_check_out_queue.put(dict((proxy, proxy in good) for proxy in proxies))
                 else:
                     time.sleep(1)
             time.sleep(1)
+        self.logger.debug("Stop check thread. ")
 
     def bad_source(self):
         self.logger.debug("Start bad source thread. ")
@@ -134,6 +138,7 @@ class ProxyFactory(MultiMonitor):
                                 self.redis_conn.hdel("bad_proxies", proxy)
                                 self.logger.debug("Abandon %s of failed for %s times. " % (proxy, times))
                         self.proxies_check_in_queue.put(proxies.keys())
+        self.logger.debug("Stop bad source thread. ")
 
     def good_source(self):
         self.logger.debug("Start good source thread. ")
@@ -146,6 +151,7 @@ class ProxyFactory(MultiMonitor):
                     if proxies:
                         self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
                         self.proxies_check_in_queue.put(proxies)
+        self.logger.debug("Stop good source thread. ")
 
     def reset_proxies(self):
         self.logger.debug("Start resets thread. ")
@@ -167,6 +173,7 @@ class ProxyFactory(MultiMonitor):
                 else:
                     time.sleep(1)
             time.sleep(1)
+        self.logger.debug("Stop resets thread. ")
 
     def gen_thread(self, target, name=None, args=(), kwargs=None):
         thread = Thread(target=target, name=name, args=args, kwargs=kwargs)
@@ -192,6 +199,7 @@ class ProxyFactory(MultiMonitor):
                         self.logger.debug("%s proxies found. " % len(proxies))
                         self.proxies_check_in_queue.put(proxies)
             is_started = True
+        self.logger.debug("Stop proxy factory. ")
 
     def log_err(self, exc_type, exc_val, exc_tb, func_name):
         self.logger.error(
