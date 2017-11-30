@@ -142,7 +142,7 @@ def fetch_cn_proxy(self):
     """
     proxies = set()
     url = "http://cn-proxy.com/"
-    soup = BeautifulSoup(self.get_html(url, proxies={"http": "http://192.168.200.51:8123"}), "html")
+    soup = BeautifulSoup(self.get_html(url), "html")
     trs = soup.select("tr")
     for i in range(2, len(trs)):
         tds = trs[i].find_all("td")

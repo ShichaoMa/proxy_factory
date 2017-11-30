@@ -38,7 +38,7 @@ RUN wget https://bootstrap.pypa.io/get-pip.py
 
 RUN python3 get-pip.py
 
-RUN pip install proxy-factory==0.1.8
+RUN pip install proxy-factory==0.1.9
 
 RUN mkdir /app
 

@@ -16,14 +16,14 @@ from toolkit import load_function, load_module
 from toolkit.logger import Logger
 from toolkit.settings import SettingsWrapper
 from toolkit.mutil_monitor import MultiMonitor
-from toolkit.manager import SleepManager, ExceptContext
+from toolkit.manager import Blocker, ExceptContext
 from toolkit.daemon_ctl import common_stop_start_control
 
 from . import proxy_site_spider
 from . import settings as default_settings
 from .utils import exception_wrapper
 
-__version__ = "0.1.8"
+__version__ = "0.1.11"
 
 
 class ProxyFactory(MultiMonitor):
@@ -87,14 +87,14 @@ class ProxyFactory(MultiMonitor):
         """
             检查代理是否可用
         """
-        with ExceptContext(Exception, errback=lambda *args: False):
+        with ExceptContext(errback=lambda *args: True):
             if self.check_method(proxy):
                 good.append(proxy)
 
     def check_proxies(self):
         self.logger.debug("Start check thread. ")
         while self.alive:
-            with ExceptContext(Exception, errback=self.log_err):
+            with ExceptContext(errback=self.log_err):
                 try:
                     proxies = self.proxies_check_in_queue.get_nowait()
                 except Empty:
@@ -126,10 +126,11 @@ class ProxyFactory(MultiMonitor):
     def bad_source(self):
         self.logger.debug("Start bad source thread. ")
         while self.alive:
-            with SleepManager(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5), self) as sm:
-                if not sm.is_notified:
+            with Blocker(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5),
+                         self, notify=lambda instance: not instance.alive) as blocker:
+                if blocker.is_notified:
                     continue
-                with ExceptContext(Exception, errback=self.log_err):
+                with ExceptContext(errback=self.log_err):
                     proxies = self.redis_conn.hgetall("bad_proxies")
                     if proxies:
                         self.logger.debug("Bad proxy count is : %s, ready to check. " % len(proxies))
@@ -143,10 +144,11 @@ class ProxyFactory(MultiMonitor):
     def good_source(self):
         self.logger.debug("Start good source thread. ")
         while self.alive:
-            with SleepManager(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5), self) as sm:
-                if not sm.is_notified:
+            with Blocker(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5),
+                         self, notify=lambda instance: not instance.alive) as blocker:
+                if blocker.is_notified:
                     continue
-                with ExceptContext(Exception, errback=self.log_err):
+                with ExceptContext(errback=self.log_err):
                     proxies = self.redis_conn.smembers("good_proxies")
                     if proxies:
                         self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
@@ -156,7 +158,7 @@ class ProxyFactory(MultiMonitor):
     def reset_proxies(self):
         self.logger.debug("Start resets thread. ")
         while self.alive:
-            with ExceptContext(Exception, errback=self.log_err):
+            with ExceptContext(errback=self.log_err):
                 try:
                     proxies = self.proxies_check_out_queue.get_nowait()
                 except Empty:
@@ -189,10 +191,11 @@ class ProxyFactory(MultiMonitor):
         self.gen_thread(self.reset_proxies)
         is_started = False
         while self.alive or [thread for thread in self.children if thread.is_alive()]:
-            with SleepManager(self.settings.get_int("FETCH_INTERVAL", 10 * 60), self, immediately=not is_started) as sm:
-                if not sm.is_notified:
+            with Blocker(self.settings.get_int("FETCH_INTERVAL", 10 * 60),
+                         self, notify=lambda instance: not instance.alive, immediately=not is_started) as blocker:
+                if blocker.is_notified:
                     continue
-                with ExceptContext(Exception, errback=self.log_err):
+                with ExceptContext(errback=self.log_err):
                     if self.alive:
                         self.logger.debug("Start to fetch proxies. ")
                         proxies = self.fetch_all()
@@ -204,6 +207,7 @@ class ProxyFactory(MultiMonitor):
     def log_err(self, exc_type, exc_val, exc_tb, func_name):
         self.logger.error(
             "Error in %s: %s" % (func_name, "".join(traceback.format_exception(exc_type, exc_val, exc_tb))))
+        return True
 
     def fetch_all(self):
         """
