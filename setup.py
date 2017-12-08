@@ -50,7 +50,7 @@ setup(
     url=URL,
     license=LICENSE,
     packages=PACKAGES,
-    install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkity>=1.1.10"],
+    install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkity"],
     include_package_data=True,
     zip_safe=True,
 )
