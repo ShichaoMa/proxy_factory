@@ -1,3 +1,4 @@
+import requests
 import pytesseract
 
 from PIL import Image
@@ -77,3 +78,14 @@ def exception_wrapper(func):
             return set()
 
     return wrapper
+
+
+def get_html(url, headers=None, proxies=None):
+    return requests.get(url, headers=headers, proxies=proxies).text
+
+
+def download(url, headers=None):
+    buffer = b""
+    for chunk in requests.get(url, headers=headers, stream=True).iter_content(1024):
+        buffer += chunk
+    return buffer

@@ -3,33 +3,28 @@ import re
 import sys
 import time
 import requests
-import traceback
 
 from os import getcwd
 from redis import Redis
 from threading import Thread
 from queue import Queue, Empty
-from argparse import ArgumentParser
 from functools import partial
 
+from toolkit.monitors import Service
 from toolkit import load_function, load_module
-from toolkit.logger import Logger
-from toolkit.settings import SettingsWrapper
-from toolkit.mutil_monitor import MultiMonitor
-from toolkit.manager import Blocker, ExceptContext
-from toolkit.daemon_ctl import common_stop_start_control
+from toolkit.managers import Blocker, ExceptContext
 
-from . import proxy_site_spider
-from . import settings as default_settings
+from .import proxy_site_spider
 from .utils import exception_wrapper
+from . import settings
 
-__version__ = "0.1.11"
+__version__ = "0.2.0"
 
 
-class ProxyFactory(MultiMonitor):
+class ProxyFactory(Service):
     name = "proxy_factory"
-    setting_wrapper = SettingsWrapper()
     current_dir = getcwd()
+    default_settings = settings
     headers = {
         'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:41.0) Gecko/20100101 Firefox/41.0',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -37,21 +32,19 @@ class ProxyFactory(MultiMonitor):
         "Accept-Encoding": "gzip, deflate",
     }
 
-    def __init__(self, settings, fetch_modules=None, check_method=None):
+    def __init__(self):
         """
             初始化logger, redis_conn
         """
         super(ProxyFactory, self).__init__()
         sys.path.insert(0, self.current_dir)
-        self.settings = self.setting_wrapper.load(settings, default_settings)
-        self.logger = Logger.init_logger(self.settings, name=self.name)
         self.proxies_check_in_queue = Queue()
         self.proxies_check_out_queue = Queue()
         self.load_site(proxy_site_spider)
-        self.load_site(fetch_modules)
+        self.load_site(self.args.spider_module)
         self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get_int("REDIS_PORT"))
-        if check_method:
-            self.check_method = partial(load_function(check_method), self)
+        if self.args.check_method:
+            self.check_method = partial(load_function(self.args.check_method), self)
 
     def load_site(self, module_str):
         if module_str:
@@ -62,18 +55,6 @@ class ProxyFactory(MultiMonitor):
             for key, func in vars(mod).items():
                 if key.startswith("fetch"):
                     self.__dict__[key] = partial(exception_wrapper(func), self)
-
-    def get_html(self, url, proxies=None):
-        """
-        获取html body
-        """
-        return requests.get(url, headers=self.headers, proxies=proxies).text
-
-    def download(self, url):
-        buffer = b""
-        for chunk in requests.get(url, headers=self.headers, stream=True).iter_content(1024):
-            buffer += chunk
-        return buffer
 
     def check_method(self, proxy):
         resp = requests.get(
@@ -92,6 +73,10 @@ class ProxyFactory(MultiMonitor):
                 good.append(proxy)
 
     def check_proxies(self):
+        """
+        对待检查队列中的代理进行检查
+        :return:
+        """
         self.logger.debug("Start check thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
@@ -111,7 +96,6 @@ class ProxyFactory(MultiMonitor):
                             th.setDaemon(True)
                             th.start()
                             thread_list.append(th)
-
                         start_time = time.time()
                         while [thread for thread in thread_list if thread.is_alive()] and start_time + 60 > time.time():
                             time.sleep(1)
@@ -124,6 +108,10 @@ class ProxyFactory(MultiMonitor):
         self.logger.debug("Stop check thread. ")
 
     def bad_source(self):
+        """
+        每隔指定时间间隔将无效代理放到待检查队列进行检查
+        :return:
+        """
         self.logger.debug("Start bad source thread. ")
         while self.alive:
             with Blocker(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5),
@@ -142,6 +130,10 @@ class ProxyFactory(MultiMonitor):
         self.logger.debug("Stop bad source thread. ")
 
     def good_source(self):
+        """
+        每隔指定时间间隔将有效代理放到待检查队列进行检查
+        :return:
+        """
         self.logger.debug("Start good source thread. ")
         while self.alive:
             with Blocker(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5),
@@ -156,6 +148,10 @@ class ProxyFactory(MultiMonitor):
         self.logger.debug("Stop good source thread. ")
 
     def reset_proxies(self):
+        """
+        分发有效代理和无效代理
+        :return:
+        """
         self.logger.debug("Start resets thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
@@ -204,11 +200,6 @@ class ProxyFactory(MultiMonitor):
             is_started = True
         self.logger.debug("Stop proxy factory. ")
 
-    def log_err(self, exc_type, exc_val, exc_tb, func_name):
-        self.logger.error(
-            "Error in %s: %s" % (func_name, "".join(traceback.format_exception(exc_type, exc_val, exc_tb))))
-        return True
-
     def fetch_all(self):
         """
             获取全部网站代理，内部调用各网站代理获取函数
@@ -219,19 +210,15 @@ class ProxyFactory(MultiMonitor):
                 proxies.update(value())
         return proxies
 
-    @classmethod
-    def parse_args(cls):
-        parser = ArgumentParser("proxy factory")
-        parser.add_argument("-s", "--settings", help="local settings. ", default="localsettings")
-        parser.add_argument("-cm", "--check-method", help="proivde a check method to check proxies. eg:module.func")
-        parser.add_argument("-sm", "--spider-module",
+    def enrich_parser_arguments(self):
+        self.parser.add_argument("-cm", "--check-method", help="proivde a check method to check proxies. eg:module.func")
+        self.parser.add_argument("-sm", "--spider-module",
                             help="proivde a module contains proxy site spider methods. eg:module1.module2")
-        args = common_stop_start_control(parser, '/dev/null')
-        return cls(args.settings, args.spider_module, args.check_method)
+        return super(ProxyFactory, self).enrich_parser_arguments()
 
 
 def main():
-    ProxyFactory.parse_args().start()
+    ProxyFactory().start()
 
 
 if __name__ == '__main__':
