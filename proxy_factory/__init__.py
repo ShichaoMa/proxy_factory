@@ -7,18 +7,18 @@ import requests
 from os import getcwd
 from redis import Redis
 from threading import Thread
-from queue import Queue, Empty
 from functools import partial
 
 from toolkit.monitors import Service
 from toolkit import load_function, load_module
 from toolkit.managers import Blocker, ExceptContext
+from toolkit.thread_safe_collections import ThreadSafeSet, TreadSafeDict
 
 from .import proxy_site_spider
 from .utils import exception_wrapper
 from . import settings
 
-__version__ = "0.2.0"
+__version__ = "0.2.2"
 
 
 class ProxyFactory(Service):
@@ -38,8 +38,8 @@ class ProxyFactory(Service):
         """
         super(ProxyFactory, self).__init__()
         sys.path.insert(0, self.current_dir)
-        self.proxies_check_in_queue = Queue()
-        self.proxies_check_out_queue = Queue()
+        self.proxies_check_in_set = ThreadSafeSet()
+        self.proxies_check_out_set = TreadSafeDict()
         self.load_site(proxy_site_spider)
         self.load_site(self.args.spider_module)
         self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get_int("REDIS_PORT"))
@@ -80,10 +80,7 @@ class ProxyFactory(Service):
         self.logger.debug("Start check thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
-                try:
-                    proxies = self.proxies_check_in_queue.get_nowait()
-                except Empty:
-                    proxies = None
+                proxies = list(self.proxies_check_in_set.pop_all())
                 if proxies:
                     self.logger.debug("Got %s proxies to check. " % len(proxies))
                     proxies = [proxy.decode() if isinstance(proxy, bytes) else proxy for proxy in proxies]
@@ -101,7 +98,7 @@ class ProxyFactory(Service):
                             time.sleep(1)
 
                     self.logger.debug("%s proxies is good. " % (len(good)))
-                    self.proxies_check_out_queue.put(dict((proxy, proxy in good) for proxy in proxies))
+                    self.proxies_check_out_set.update(dict((proxy, proxy in good) for proxy in proxies))
                 else:
                     time.sleep(1)
             time.sleep(1)
@@ -126,7 +123,7 @@ class ProxyFactory(Service):
                             if int(times) > self.settings.get_int("FAILED_TIMES", 5):
                                 self.redis_conn.hdel("bad_proxies", proxy)
                                 self.logger.debug("Abandon %s of failed for %s times. " % (proxy, times))
-                        self.proxies_check_in_queue.put(proxies.keys())
+                        self.proxies_check_in_set.update(proxies.keys())
         self.logger.debug("Stop bad source thread. ")
 
     def good_source(self):
@@ -144,7 +141,7 @@ class ProxyFactory(Service):
                     proxies = self.redis_conn.smembers("good_proxies")
                     if proxies:
                         self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
-                        self.proxies_check_in_queue.put(proxies)
+                        self.proxies_check_in_set.update(proxies)
         self.logger.debug("Stop good source thread. ")
 
     def reset_proxies(self):
@@ -155,13 +152,10 @@ class ProxyFactory(Service):
         self.logger.debug("Start resets thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
-                try:
-                    proxies = self.proxies_check_out_queue.get_nowait()
-                except Empty:
-                    proxies = None
+                proxies = list(self.proxies_check_out_set.pop_all())
                 if proxies:
                     self.logger.debug("Got %s proxies to reset. " % len(proxies))
-                    for proxy, good in proxies.items():
+                    for proxy, good in proxies:
                         if good:
                             self.redis_conn.sadd("good_proxies", proxy)
                             self.redis_conn.hdel("bad_proxies", proxy)
@@ -196,7 +190,7 @@ class ProxyFactory(Service):
                         self.logger.debug("Start to fetch proxies. ")
                         proxies = self.fetch_all()
                         self.logger.debug("%s proxies found. " % len(proxies))
-                        self.proxies_check_in_queue.put(proxies)
+                        self.proxies_check_in_set.update(proxies)
             is_started = True
         self.logger.debug("Stop proxy factory. ")
 

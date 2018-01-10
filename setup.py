@@ -5,7 +5,7 @@ except:
     from distutils.core import setup
 
 
-VERSION = '0.2.0'
+VERSION = '0.2.2'
 
 AUTHOR = "cn"
 
@@ -50,7 +50,7 @@ setup(
     url=URL,
     license=LICENSE,
     packages=PACKAGES,
-    install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkity>=1.3.6"],
+    install_requires=["requests", "pytesseract", "pillow", "redis",  "bs4", "toolkity>=1.3.8"],
     include_package_data=True,
     zip_safe=True,
 )
