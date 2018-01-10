@@ -10,23 +10,32 @@ pip install proxy-factory
 
 # USAGE
 ```angular2html
-usage: proxy factory [-h] [-s SETTINGS] [-cm CHECK_METHOD] [-sm SPIDER_MODULE]
-                     [-d]
-                     [{stop,start,restart,status}]
+mashichaodeMac-mini:toolkit mashichao$ product -h
+usage: product [-h] [-cm CHECK_METHOD] [-sm SPIDER_MODULE] [--console]
+               [--console-host CONSOLE_HOST] [--console-port CONSOLE_PORT]
+               [-s SETTINGS] [-ls LOCALSETTINGS] [-d]
+               [{stop,start,restart,status}]
 
 positional arguments:
   {stop,start,restart,status}
 
 optional arguments:
   -h, --help            show this help message and exit
-  -s SETTINGS, --settings SETTINGS
-                        local settings.
   -cm CHECK_METHOD, --check-method CHECK_METHOD
                         proivde a check method to check proxies.
                         eg:module.func
   -sm SPIDER_MODULE, --spider-module SPIDER_MODULE
                         proivde a module contains proxy site spider methods.
-                        eg:module
+                        eg:module1.module2
+  --console             start a console.
+  --console-host CONSOLE_HOST
+                        console host.
+  --console-port CONSOLE_PORT
+                        console port.
+  -s SETTINGS, --settings SETTINGS
+                        Setting module.
+  -ls LOCALSETTINGS, --localsettings LOCALSETTINGS
+                        Local setting module.
   -d, --daemon
 ####################################################################
 - product start： 程序开始(阻塞式)
@@ -34,7 +43,9 @@ optional arguments:
 - product restart 程序重启(守护进程模式)
 - product stop 程序关闭(守护进程模式)
 - product status 程序状态(守护进程模式)
-- product -s localsettings 指定一个自定义配置模块。(只要在sys.path中就可以找到)
+- product --console 开启一个console客户端，调试专用，详细请参见(https://github.com/ShichaoMa/toolkit)
+- product -s settings 指定一个配置模块。(只要在sys.path中就可以找到)
+- product -ls localsettings 指定一个自定义配置模块。(只要在sys.path中就可以找到)
 - product -cm check-method 指定一个自定义检查方法。(只要在sys.path中就可以找到)
 - product -sm spider-module 指定一个自定义的spider模块，存放自定义的spider方法。(只要在sys.path中就可以找到)
 ```
