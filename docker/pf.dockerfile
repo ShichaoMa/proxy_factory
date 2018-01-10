@@ -2,6 +2,10 @@ FROM ubuntu
 
 MAINTAINER Shichao Ma
 
+COPY Shanghai /etc/localtime
+
+COPY timezone /etc
+
 RUN apt-get clean && apt-get update
 
 RUN apt-get install -y locales
@@ -12,33 +16,17 @@ RUN update-locale LANG=en_US.UTF-8
 
 ENV LANG en_US.UTF-8
 
-COPY Shanghai /etc/localtime
-
-COPY timezone /etc
-
-RUN apt-get install -y --no-install-recommends libc6-dev gcc make
-
-RUN apt-get install -y --no-install-recommends \
-      libjpeg8-dev zlib1g-dev \
-      libfreetype6-dev liblcms2-dev \
-      libwebp-dev tcl8.5-dev \
-      tk8.5-dev python-tk
+RUN apt-get install -y --no-install-recommends gcc make wget
 
 RUN apt-get install -y --no-install-recommends tesseract-ocr
 
-RUN apt-get install -y --no-install-recommends git
-
-RUN apt-get install -y --no-install-recommends ca-certificates
-
-RUN apt-get install -y --no-install-recommends python3 wget
-
 RUN apt-get install -y --no-install-recommends python3-dev
 
-RUN wget https://bootstrap.pypa.io/get-pip.py
+RUN wget https://bootstrap.pypa.io/get-pip.py --no-check-certificate
 
 RUN python3 get-pip.py
 
-RUN pip install proxy-factory==0.2.2
+RUN pip install proxy-factory
 
 RUN mkdir /app
 

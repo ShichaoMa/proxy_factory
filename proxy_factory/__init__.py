@@ -18,7 +18,7 @@ from .import proxy_site_spider
 from .utils import exception_wrapper
 from . import settings
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 
 class ProxyFactory(Service):
