@@ -25,12 +25,6 @@ class ProxyFactory(Service):
     name = "proxy_factory"
     current_dir = getcwd()
     default_settings = settings
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:41.0) Gecko/20100101 Firefox/41.0',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-    }
 
     def __init__(self):
         """
@@ -38,8 +32,9 @@ class ProxyFactory(Service):
         """
         super(ProxyFactory, self).__init__()
         sys.path.insert(0, self.current_dir)
-        self.proxies_check_in_set = ThreadSafeSet()
-        self.proxies_check_out_set = TreadSafeDict()
+        self.headers = self.settings.get("HEADERS")
+        self.proxies_check_in_channel = ThreadSafeSet()
+        self.proxies_check_out_channel = TreadSafeDict()
         self.load_site(proxy_site_spider)
         self.load_site(self.args.spider_module)
         self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get_int("REDIS_PORT"))
@@ -80,7 +75,7 @@ class ProxyFactory(Service):
         self.logger.debug("Start check thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
-                proxies = list(self.proxies_check_in_set.pop_all())
+                proxies = list(self.proxies_check_in_channel.pop_all())
                 if proxies:
                     self.logger.debug("Got %s proxies to check. " % len(proxies))
                     proxies = [proxy.decode() if isinstance(proxy, bytes) else proxy for proxy in proxies]
@@ -98,7 +93,7 @@ class ProxyFactory(Service):
                             time.sleep(1)
 
                     self.logger.debug("%s proxies is good. " % (len(good)))
-                    self.proxies_check_out_set.update(dict((proxy, proxy in good) for proxy in proxies))
+                    self.proxies_check_out_channel.update(dict((proxy, proxy in good) for proxy in proxies))
                 else:
                     time.sleep(1)
             time.sleep(1)
@@ -123,7 +118,7 @@ class ProxyFactory(Service):
                             if int(times) > self.settings.get_int("FAILED_TIMES", 5):
                                 self.redis_conn.hdel("bad_proxies", proxy)
                                 self.logger.debug("Abandon %s of failed for %s times. " % (proxy, times))
-                        self.proxies_check_in_set.update(proxies.keys())
+                        self.proxies_check_in_channel.update(proxies.keys())
         self.logger.debug("Stop bad source thread. ")
 
     def good_source(self):
@@ -141,7 +136,7 @@ class ProxyFactory(Service):
                     proxies = self.redis_conn.smembers("good_proxies")
                     if proxies:
                         self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
-                        self.proxies_check_in_set.update(proxies)
+                        self.proxies_check_in_channel.update(proxies)
         self.logger.debug("Stop good source thread. ")
 
     def reset_proxies(self):
@@ -152,7 +147,7 @@ class ProxyFactory(Service):
         self.logger.debug("Start resets thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
-                proxies = list(self.proxies_check_out_set.pop_all())
+                proxies = list(self.proxies_check_out_channel.pop_all())
                 if proxies:
                     self.logger.debug("Got %s proxies to reset. " % len(proxies))
                     for proxy, good in proxies:
@@ -190,7 +185,7 @@ class ProxyFactory(Service):
                         self.logger.debug("Start to fetch proxies. ")
                         proxies = self.fetch_all()
                         self.logger.debug("%s proxies found. " % len(proxies))
-                        self.proxies_check_in_set.update(proxies)
+                        self.proxies_check_in_channel.update(proxies)
             is_started = True
         self.logger.debug("Stop proxy factory. ")
 
