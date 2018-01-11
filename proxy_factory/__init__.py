@@ -32,7 +32,7 @@ class ProxyFactory(Service):
         """
         super(ProxyFactory, self).__init__()
         sys.path.insert(0, self.current_dir)
-        self.headers = self.settings.get("HEADERS")
+        self.headers = self.settings.HEADERS
         self.proxies_check_in_channel = ThreadSafeSet()
         self.proxies_check_out_channel = TreadSafeDict()
         self.load_site(proxy_site_spider)
