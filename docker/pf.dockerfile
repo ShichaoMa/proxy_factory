@@ -26,7 +26,7 @@ RUN wget https://bootstrap.pypa.io/get-pip.py --no-check-certificate
 
 RUN python3 get-pip.py
 
-RUN pip install proxy-factory
+RUN pip install proxy-factory==0.2.6
 
 RUN mkdir /app
 

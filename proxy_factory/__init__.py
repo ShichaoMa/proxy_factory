@@ -14,11 +14,11 @@ from toolkit import load_function, load_module
 from toolkit.managers import Blocker, ExceptContext
 from toolkit.thread_safe_collections import ThreadSafeSet, TreadSafeDict
 
-from .import proxy_site_spider
+from . import proxy_site_spider
 from .utils import exception_wrapper
 from . import settings
 
-__version__ = "0.2.3"
+__version__ = "0.2.6"
 
 
 class ProxyFactory(Service):
@@ -65,7 +65,7 @@ class ProxyFactory(Service):
         """
         with ExceptContext(errback=lambda *args: True):
             if self.check_method(proxy):
-                good.append(proxy)
+                good.add(proxy)
 
     def check_proxies(self):
         """
@@ -75,25 +75,24 @@ class ProxyFactory(Service):
         self.logger.debug("Start check thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
-                proxies = list(self.proxies_check_in_channel.pop_all())
-                if proxies:
-                    self.logger.debug("Got %s proxies to check. " % len(proxies))
-                    proxies = [proxy.decode() if isinstance(proxy, bytes) else proxy for proxy in proxies]
-                    good = list()
-                    for i in range(0, len(proxies), 150):
-                        # 分批检查
-                        thread_list = []
-                        for proxy in proxies[i: i+150]:
-                            th = Thread(target=self.check, args=(proxy, good))
-                            th.setDaemon(True)
-                            th.start()
-                            thread_list.append(th)
-                        start_time = time.time()
-                        while [thread for thread in thread_list if thread.is_alive()] and start_time + 60 > time.time():
-                            time.sleep(1)
-
-                    self.logger.debug("%s proxies is good. " % (len(good)))
-                    self.proxies_check_out_channel.update(dict((proxy, proxy in good) for proxy in proxies))
+                threads = dict()
+                good = set()
+                while self.alive and len(self.proxies_check_in_channel):
+                    proxy = self.proxies_check_in_channel.pop()
+                    if isinstance(proxy, bytes):
+                        proxy = proxy.decode()
+                    if len(threads) < 150:
+                        th = Thread(target=self.check, args=(proxy, good))
+                        th.setDaemon(True)
+                        th.start()
+                        threads[time.time()] = (th, proxy)
+                        time.sleep(.001)
+                    else:
+                        time.sleep(1)
+                        for start_time, (th, proxy) in threads.copy().items():
+                            if start_time + 60 < time.time() or not th.is_alive():
+                                del threads[start_time]
+                                self.proxies_check_out_channel[proxy] = proxy in good
                 else:
                     time.sleep(1)
             time.sleep(1)
@@ -108,17 +107,16 @@ class ProxyFactory(Service):
         while self.alive:
             with Blocker(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5),
                          self, notify=lambda instance: not instance.alive) as blocker:
-                if blocker.is_notified:
+                if blocker.is_notified or len(self.proxies_check_in_channel):
                     continue
                 with ExceptContext(errback=self.log_err):
                     proxies = self.redis_conn.hgetall("bad_proxies")
                     if proxies:
                         self.logger.debug("Bad proxy count is : %s, ready to check. " % len(proxies))
-                        for proxy, times in proxies.items():
-                            if int(times) > self.settings.get_int("FAILED_TIMES", 5):
-                                self.redis_conn.hdel("bad_proxies", proxy)
-                                self.logger.debug("Abandon %s of failed for %s times. " % (proxy, times))
-                        self.proxies_check_in_channel.update(proxies.keys())
+                        while proxies:
+                            proxy, times = proxies.popitem()
+                            self.proxies_check_in_channel.add(proxy)
+
         self.logger.debug("Stop bad source thread. ")
 
     def good_source(self):
@@ -130,7 +128,7 @@ class ProxyFactory(Service):
         while self.alive:
             with Blocker(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5),
                          self, notify=lambda instance: not instance.alive) as blocker:
-                if blocker.is_notified:
+                if blocker.is_notified or len(self.proxies_check_in_channel):
                     continue
                 with ExceptContext(errback=self.log_err):
                     proxies = self.redis_conn.smembers("good_proxies")
@@ -155,7 +153,10 @@ class ProxyFactory(Service):
                             self.redis_conn.sadd("good_proxies", proxy)
                             self.redis_conn.hdel("bad_proxies", proxy)
                         else:
-                            self.redis_conn.hincrby("bad_proxies", proxy)
+                            count = self.redis_conn.hincrby("bad_proxies", proxy)
+                            if count > self.settings.get_int("FAILED_TIMES", 5):
+                                self.redis_conn.hdel("bad_proxies", proxy)
+                                self.logger.debug("Abandon %s of failed for %s times. " % (proxy, count))
                             self.redis_conn.srem("good_proxies", proxy)
                 else:
                     time.sleep(1)

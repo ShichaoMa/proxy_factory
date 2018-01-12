@@ -5,7 +5,7 @@ except:
     from distutils.core import setup
 
 
-VERSION = '0.2.3'
+VERSION = '0.2.6'
 
 AUTHOR = "cn"
 
