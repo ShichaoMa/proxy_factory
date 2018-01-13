@@ -18,7 +18,7 @@ from . import proxy_site_spider
 from .utils import exception_wrapper
 from . import settings
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 
 class ProxyFactory(Service):
@@ -73,30 +73,32 @@ class ProxyFactory(Service):
         :return:
         """
         self.logger.debug("Start check thread. ")
+
+        threads = dict()
+        good = set()
         while self.alive:
-            with ExceptContext(errback=self.log_err):
-                threads = dict()
-                good = set()
-                while self.alive and len(self.proxies_check_in_channel):
-                    proxy = self.proxies_check_in_channel.pop()
-                    if isinstance(proxy, bytes):
-                        proxy = proxy.decode()
-                    if len(threads) < 150:
-                        th = Thread(target=self.check, args=(proxy, good))
-                        th.setDaemon(True)
-                        th.start()
-                        threads[time.time()] = (th, proxy)
-                        time.sleep(.001)
-                    else:
-                        time.sleep(1)
-                        for start_time, (th, proxy) in threads.copy().items():
-                            if start_time + 60 < time.time() or not th.is_alive():
-                                del threads[start_time]
-                                self.proxies_check_out_channel[proxy] = proxy in good
-                else:
-                    time.sleep(1)
-            time.sleep(1)
+            if len(self.proxies_check_in_channel):
+                proxy = self.proxies_check_in_channel.pop()
+            else:
+                proxy = None
+            if isinstance(proxy, bytes):
+                proxy = proxy.decode()
+            if len(threads) < 150 and proxy:
+                th = Thread(target=self.check, args=(proxy, good))
+                th.setDaemon(True)
+                th.start()
+                threads[time.time()] = (th, proxy)
+                time.sleep(.001)
+            else:
+                time.sleep(1)
+                for start_time, (th, proxy) in threads.copy().items():
+                    if start_time + 60 < time.time() or not th.is_alive():
+                        del threads[start_time]
+                        self.proxies_check_out_channel[proxy] = proxy in good
+                        good.discard(proxy)
+
         self.logger.debug("Stop check thread. ")
+
 
     def bad_source(self):
         """
