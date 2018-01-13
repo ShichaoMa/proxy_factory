@@ -15,7 +15,8 @@ def https_check(self, proxy):
     resp = requests.get("http://www.whatismyip.com.tw/",
                         headers=self.headers, timeout=10, proxies={"http": "http://%s" % proxy})
     ip, real_ip = re.search(r'"ip": "(.*?)"[\s\S]+"ip-real": "(.*?)",', resp.text).groups()
-    self.logger.debug("IP: %s. Real IP: %s. Proxy: %s" % (ip, real_ip, proxy))
     if resp.status_code < 300 and not real_ip:
         requests.head("https://httpbin.org/ip", timeout=10, proxies={"https": "http://%s" % proxy})
+        self.logger.debug("IP: %s. Real IP: %s. Proxy: %s" % (ip, real_ip, proxy))
         return True
+    return False
