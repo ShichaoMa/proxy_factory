@@ -74,7 +74,8 @@ def check(self, proxy):
     return resp.status_code < 300
 ```
 ### CUSTOM PROXY SITE METHOD
-```
+
+```python
 def fetch_custom(self, page=5):
     """
     自定义代理网站抓取
@@ -86,7 +87,7 @@ def fetch_custom(self, page=5):
     url_tmpl = "http://www.kxdaili.com/dailiip/1/%d.html"
     for page_num in range(page):
         url = url_tmpl % (page_num + 1)
-        soup = BeautifulSoup(self.get_html(url), "html")
+        soup = BeautifulSoup(get_html(url, self.headers), "html")
         table_tag = soup.find("table", attrs={"class": "segment"})
         trs = table_tag.tbody.find_all("tr")
         for tr in trs:
@@ -101,6 +102,7 @@ def fetch_custom(self, page=5):
 ```
 
 ### SETTINGS
+
 ```python
 REDIS_HOST = "0.0.0.0"
 
@@ -130,5 +132,6 @@ LOG_STDOUT = False
 
 LOG_JSON = False 
 ```
+
 参考资料
 [一键获取免费真实的匿名代理](https://zhuanlan.zhihu.com/p/31421147?group_id=918195817936896000)
