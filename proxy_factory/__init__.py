@@ -137,7 +137,7 @@ class ProxyFactory(Service):
                     if proxies:
                         self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
                         self.proxies_check_in_channel.update(proxies)
-                        
+
         self.logger.debug("Stop good source thread. ")
 
     def reset_proxies(self):
