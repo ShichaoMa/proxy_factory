@@ -7,14 +7,14 @@ from .utils import parse_class, parse_port, get_html, download
 
 def fetch_kxdaili(self, page=5):
     """
-    从www.kxdaili.com抓取免费代理
+    www.kxdaili.com
     """
     proxies = set()
     url_tmpl = "http://www.kxdaili.com/dailiip/1/%d.html"
     for page_num in range(page):
         url = url_tmpl % (page_num + 1)
         soup = BeautifulSoup(get_html(url, self.headers), "html")
-        table_tag = soup.find("table", attrs={"class": "segment"})
+        table_tag = soup.find("table", attrs={"class": "active"})
         trs = table_tag.tbody.find_all("tr")
         for tr in trs:
             tds = tr.find_all("td")
@@ -29,7 +29,7 @@ def fetch_kxdaili(self, page=5):
 
 def fetch_mimvp(self):
     """
-    从http://proxy.mimvp.com/free.php抓免费代理
+    http://proxy.mimvp.com/free.php
     """
     proxies = set()
     url = "http://proxy.mimvp.com/free.php?proxy=in_hp"
@@ -60,134 +60,116 @@ def fetch_xici(self):
     return proxies
 
 
-def fetch_nianshao(self):
+def fetch_66ip(self, page=5):
     """
-    http://www.nianshao.com/
-    """
-    proxies = set()
-    url = "http://www.nianshao.me/"
-    soup = BeautifulSoup(get_html(url, self.headers), "html")
-    table = soup.find("table", attrs={"class": "table"})
-    trs = table.find_all("tr")
-    for i in range(1, len(trs)):
-        tr = trs[i]
-        tds = tr.find_all("td")
-        ip = tds[0].text
-        port = tds[1].text
-        proxies.add("%s:%s" % (ip, port))
-    return proxies
-
-
-def fetch_ip181(self):
-    """
-    http://www.ip181.com/
+    http://www.66ip.cn/areaindex_2/1.html
     """
     proxies = set()
-    url = "http://www.ip181.com/"
-    soup = BeautifulSoup(get_html(url, self.headers), "html")
-    table = soup.find("table")
-    trs = table.find_all("tr")
-    for i in range(1, len(trs)):
-        tds = trs[i].find_all("td")
-        ip = tds[0].text
-        port = tds[1].text
-        proxies.add("%s:%s" % (ip, port))
-    return proxies
-
-
-def fetch_httpdaili(self):
-    """
-    http://www.httpdaili.com/mfdl/
-    更新比较频繁
-    """
-    proxies = set()
-    url = "http://www.httpdaili.com/mfdl/"
-    soup = BeautifulSoup(get_html(url, self.headers), "html")
-    trs = soup.select(".kb-item-wrap11 tr")
-
-    for i in range(len(trs)):
-        tds = trs[i].find_all("td")
-        if len(tds) > 2 and tds[1].text.isdigit():
+    url_tmpl = "http://www.66ip.cn/areaindex_%s/1.html"
+    for page_num in range(page):
+        soup = BeautifulSoup(get_html(url_tmpl % (page_num + 1), self.headers), "html")
+        trs = soup.select("tr")
+        for i in range(4, len(trs)):
+            tds = trs[i].find_all("td")
             ip = tds[0].text
             port = tds[1].text
-            type = tds[2].text
-            if type.encode("iso-8859-1").decode("utf-8") == "匿名":
-                proxies.add("%s:%s" % (ip, port))
-    return proxies
-
-
-def fetch_66ip_sd(self):
-    """
-    http://www.66ip.cn/areaindex_15/1.html
-    @return:
-    """
-    proxies = set()
-    url = "http://www.66ip.cn/areaindex_15/1.html"
-    soup = BeautifulSoup(get_html(url, self.headers), "html")
-    table = soup.find("table", attrs={"border": "2px"})
-    trs = table.find_all("tr")
-    for i in range(1, len(trs)):
-        tds = trs[i].find_all("td")
-        ip = tds[0].text
-        port = tds[1].text
-        type = tds[3].text
-        if type.encode("iso-8859-1").decode("gbk") == "高匿代理":
             proxies.add("%s:%s" % (ip, port))
     return proxies
 
 
-def fetch_cn_proxy(self):
-    """
-    http://cn-proxy.com/
-    """
-    proxies = set()
-    url = "http://cn-proxy.com/"
-    soup = BeautifulSoup(get_html(url, self.headers), "html")
-    trs = soup.select("tr")
-    for i in range(2, len(trs)):
-        tds = trs[i].find_all("td")
-        try:
-            ip = tds[0].text
-            port = tds[1].text
-            if port.isdigit():
-                proxies.add("%s:%s" % (ip, port))
-        except IndexError:
-            pass
-    return proxies
-
-
-def fetch_66ip(self):
-    """
-    http://www.66ip.cn/areaindex_15/1.html
-    """
-    proxies = set()
-    url = "http://www.66ip.cn/areaindex_15/1.html"
-    soup = BeautifulSoup(get_html(url, self.headers), "html")
-    trs = soup.select("tr")
-    for i in range(4, len(trs)):
-        tds = trs[i].find_all("td")
-        ip = tds[0].text
-        port = tds[1].text
-        proxies.add("%s:%s" % (ip, port))
-    return proxies
-
-
-def fetch_goubanjia(self, page=5):
+def fetch_goubanjia(self):
     """
     http://www.goubanjia.com/
     :return:
     """
     proxies = set()
-    url_tmpl = "http://www.goubanjia.com/index%s.shtml"
-    for page_num in range(page):
-        url = url_tmpl % (page_num + 1)
-        soup = BeautifulSoup(get_html(url, self.headers), "html")
-        trs = soup.select("tbody > tr")
-        for tr in trs:
-            tds = tr.find_all("td")
-            ip = "".join(re.findall(r"(?<!none;\")>(.*?)<", str(tds[0]))).split(":")[0]
-            port = parse_class(tds[0].select(".port")[0]["class"][-1])
-            type = tds[1].a.text
-            if type.count("匿"):
-                proxies.add("%s:%s" % (ip, port))
+    url = "http://www.goubanjia.com"
+    soup = BeautifulSoup(get_html(url, self.headers), "html")
+    trs = soup.select("tbody > tr")
+    for tr in trs:
+        tds = tr.find_all("td")
+        ip = "".join(re.findall(r'(?<!none;")>(.*?)<', str(tds[0]))).split(":")[0]
+        port = parse_class(tds[0].select(".port")[0]["class"][-1])
+        type = tds[1].a.text
+        if type.count("匿"):
+            proxies.add("%s:%s" % (ip, port))
     return proxies
+
+# def fetch_nianshao(self):
+#     """
+#     无法使用
+#     http://www.nianshao.me/
+#     """
+#     proxies = set()
+#     url = "http://www.nianshao.me/"
+#     soup = BeautifulSoup(get_html(url, self.headers), "html")
+#     table = soup.find("table", attrs={"class": "table"})
+#     trs = table.find_all("tr")
+#     for i in range(1, len(trs)):
+#         tr = trs[i]
+#         tds = tr.find_all("td")
+#         ip = tds[0].text
+#         port = tds[1].text
+#         proxies.add("%s:%s" % (ip, port))
+#     return proxies
+#
+#
+# def fetch_ip181(self):
+#     """
+#     无法使用
+#     http://www.ip181.com/
+#     """
+#     proxies = set()
+#     url = "http://www.ip181.com/"
+#     soup = BeautifulSoup(get_html(url, self.headers), "html")
+#     table = soup.find("table")
+#     trs = table.find_all("tr")
+#     for i in range(1, len(trs)):
+#         tds = trs[i].find_all("td")
+#         ip = tds[0].text
+#         port = tds[1].text
+#         proxies.add("%s:%s" % (ip, port))
+#     return proxies
+#
+#
+# def fetch_httpdaili(self):
+#     """
+#     无法使用
+#     http://www.httpdaili.com/mfdl/
+#     """
+#     proxies = set()
+#     url = "http://www.httpdaili.com/mfdl/"
+#     soup = BeautifulSoup(get_html(url, self.headers), "html")
+#     trs = soup.select(".kb-item-wrap11 tr")
+#
+#     for i in range(len(trs)):
+#         tds = trs[i].find_all("td")
+#         if len(tds) > 2 and tds[1].text.isdigit():
+#             ip = tds[0].text
+#             port = tds[1].text
+#             type = tds[2].text
+#             if type.encode("iso-8859-1").decode("utf-8") == "匿名":
+#                 proxies.add("%s:%s" % (ip, port))
+#     return proxies
+#
+#
+# def fetch_cn_proxy(self):
+#     """
+#     无法使用
+#     http://cn-proxy.com/
+#     """
+#     proxies = set()
+#     url = "http://cn-proxy.com/"
+#     soup = BeautifulSoup(get_html(url, self.headers), "html")
+#     trs = soup.select("tr")
+#     for i in range(2, len(trs)):
+#         tds = trs[i].find_all("td")
+#         try:
+#             ip = tds[0].text
+#             port = tds[1].text
+#             if port.isdigit():
+#                 proxies.add("%s:%s" % (ip, port))
+#         except IndexError:
+#             pass
+#     return proxies
+#

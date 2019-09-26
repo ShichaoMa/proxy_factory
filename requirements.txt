@@ -1,6 +1,6 @@
 requests
 pytesseract
 pillow
-redis
+redis~=2.9.0
 bs4
 toolkity
