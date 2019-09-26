@@ -1,6 +1,6 @@
 requests
 pytesseract
-pillow
 redis~=2.9.0
 bs4
-toolkity
+pillow
+toolkity~=1.8.0
