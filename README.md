@@ -119,18 +119,6 @@ GOOD_CHECK_INTERVAL = 60
 
 # 抓取新代理的时间间隔
 FETCH_INTERVAL = 60
-
-LOG_LEVEL = 'DEBUG'
-
-LOG_MAX_BYTES = 1024*1024*10
-
-LOG_BACKUPS = 5
-
-LOG_DIR = "/home/pi/logs"
-
-LOG_STDOUT = False
-
-LOG_JSON = False 
 ```
 
 参考资料

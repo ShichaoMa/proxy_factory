@@ -10,13 +10,6 @@ GOOD_CHECK_INTERVAL = 5*60
 # 抓取新代理的时间间隔
 FETCH_INTERVAL = 10*60
 
-LOG_LEVEL = 'DEBUG'
-LOG_MAX_BYTES = 1024*1024*10
-LOG_BACKUPS = 5
-LOG_DIR = "logs"
-LOG_STDOUT = True
-LOG_JSON = False
-
 
 HEADERS = {
         'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:41.0) Gecko/20100101 Firefox/41.0',

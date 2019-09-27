@@ -14,7 +14,6 @@ pytesseract = "*"
 redis = "~=2.9.0"
 bs4 = "*"
 Pillow = "*"
-toolkity = "~=1.8.0"
 
 [requires]
 python_version = "3.6"

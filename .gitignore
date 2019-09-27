@@ -5,7 +5,6 @@ __pycache__/
 .idea/
 # C extensions
 *.so
-*lock
 # Distribution / packaging
 .Python
 env/

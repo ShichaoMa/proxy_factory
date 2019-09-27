@@ -1,16 +1,21 @@
 # -*- coding: utf-8 -*-
+import os
 import sys
 import time
 import requests
+import traceback
 
 from os import getcwd
 from redis import Redis
 from threading import Thread
 from functools import partial
+from argparse import ArgumentParser
 
 from toolkit import load, re_search
-from toolkit.service.monitors import Service
+from toolkit.settings import SettingsLoader
+from toolkit.service.monitors import ParallelMonitor
 from toolkit.tools.managers import Blocker, ExceptContext
+from toolkit.service.plugins import CommandlinePluginProxy, Supervisor, Console
 from toolkit.structures.thread_safe_collections import ThreadSafeSet, TreadSafeDict
 
 from . import proxy_site_spider
@@ -18,27 +23,40 @@ from .utils import exception_wrapper
 from . import settings
 
 
-class ProxyFactory(Service):
+class ProxyFactory(ParallelMonitor):
     name = "proxy_factory"
-    current_dir = getcwd()
-    default_settings = settings
     proxy_methods = dict()
+    parser = ArgumentParser(conflict_handler="resolve")
+    supervisor = CommandlinePluginProxy(Supervisor, parser)
+    console = CommandlinePluginProxy(Console, parser)
 
     def __init__(self):
         """
             初始化logger, redis_conn
         """
-        super().__init__()
-        sys.path.insert(0, self.current_dir)
+        self.enrich_parser_arguments()
+        args = self.parser.parse_args()
+        self.settings = SettingsLoader().load(args.localsettings, args.settings)
+        cwd = getcwd()
+        sys.path.insert(0, cwd)
         self.headers = self.settings.HEADERS
         self.proxies_check_in_channel = ThreadSafeSet()
         self.proxies_check_out_channel = TreadSafeDict()
         self.load_site(proxy_site_spider)
-        self.load_site(self.args.spider_module)
-        self.redis_conn = Redis(self.settings.get("REDIS_HOST"), self.settings.get_int("REDIS_PORT"))
-        if self.args.check_method:
-            self.is_anonymous = partial(load(self.args.check_method), self)
+        self.load_site(args.spider_module)
+        self.redis_conn = Redis(self.settings.get("REDIS_HOST"),
+                                self.settings.get_int("REDIS_PORT"))
+        if args.check_method:
+            self.is_anonymous = partial(load(args.check_method), self)
+        super().__init__()
+        self.supervisor.control(log_path=os.path.join(cwd, self.name) + ".log")
+        self.console.init_console()
         self.my_ip = requests.get("https://httpbin.org/ip").json()["origin"]
+
+    def log_err(self, func_name, *args):
+        self.logger.error("Error in %s: %s. " % (
+            func_name, "".join(traceback.format_exception(*args))))
+        return True
 
     def load_site(self, module_str):
         if module_str:
@@ -47,12 +65,14 @@ class ProxyFactory(Service):
             else:
                 mod = module_str
             for key, func in vars(mod).items():
-                if key.startswith("fetch"):
-                    self.proxy_methods[key] = partial(exception_wrapper(func), self)
+                if not key.startswith("fetch"):
+                    continue
+                self.proxy_methods[key] = partial(exception_wrapper(func), self)
 
     def is_anonymous(self, proxy):
         url = "http://www.98bk.com/cycx/ip1/"
-        resp = requests.get(url, timeout=10, headers=self.headers, proxies={"http": "http://%s" % proxy})
+        resp = requests.get(url, timeout=10, headers=self.headers,
+                            proxies={"http": "http://%s" % proxy})
         buf = resp.text.encode("iso-8859-1").decode("gbk")
         real_ip = re_search(r"您的真实IP是([\d\.]+)", buf)
         self.logger.info(f"My ip :{self.my_ip}, Real ip: {real_ip}")
@@ -111,13 +131,14 @@ class ProxyFactory(Service):
             with ExceptContext(errback=self.log_err):
                 proxies = self.redis_conn.hgetall("bad_proxies")
                 if proxies:
-                    self.logger.debug("Bad proxy count is : %s, ready to check. " % len(proxies))
+                    self.logger.debug(
+                        f"Bad proxy count is: {len(proxies)}, ready to check.")
                     while proxies:
                         proxy, times = proxies.popitem()
                         self.proxies_check_in_channel.add(proxy)
 
-            Blocker(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5)).wait_timeout_or_notify(
-                notify=lambda: not self.alive)
+            Blocker(self.settings.get_int("BAD_CHECK_INTERVAL", 60 * 5)).\
+                wait_timeout_or_notify(notify=lambda: not self.alive)
 
         self.logger.debug("Stop bad source thread. ")
 
@@ -131,10 +152,11 @@ class ProxyFactory(Service):
             with ExceptContext(errback=self.log_err):
                 proxies = self.redis_conn.smembers("good_proxies")
                 if proxies:
-                    self.logger.debug("Good proxy count is : %s, ready to check. " % len(proxies))
+                    self.logger.debug(
+                        f"Good proxy count is: {len(proxies)}, ready to check.")
                     self.proxies_check_in_channel.update(proxies)
-            Blocker(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5)).wait_timeout_or_notify(
-                notify=lambda: not self.alive)
+            Blocker(self.settings.get_int("GOOD_CHECK_INTERVAL", 60 * 5)).\
+                wait_timeout_or_notify(notify=lambda: not self.alive)
 
         self.logger.debug("Stop good source thread. ")
 
@@ -148,7 +170,7 @@ class ProxyFactory(Service):
             with ExceptContext(errback=self.log_err):
                 proxies = list(self.proxies_check_out_channel.pop_all())
                 if proxies:
-                    self.logger.debug("Got %s proxies to reset. " % len(proxies))
+                    self.logger.debug(f"Got {len(proxies)} proxies to reset.")
                     for proxy, good in proxies:
                         if good:
                             self.redis_conn.sadd("good_proxies", proxy)
@@ -157,7 +179,8 @@ class ProxyFactory(Service):
                             count = self.redis_conn.hincrby("bad_proxies", proxy)
                             if count > self.settings.get_int("FAILED_TIMES", 5):
                                 self.redis_conn.hdel("bad_proxies", proxy)
-                                self.logger.debug("Abandon %s of failed for %s times. " % (proxy, count))
+                                self.logger.debug(
+                                    f"Abandon {proxy} of failed for {count} times.")
                             self.redis_conn.srem("good_proxies", proxy)
                 else:
                     time.sleep(1)
@@ -177,7 +200,7 @@ class ProxyFactory(Service):
         self.gen_thread(self.good_source)
         self.gen_thread(self.reset_proxies)
 
-        while self.alive or [thread for thread in self.children if thread.is_alive()]:
+        while self.alive or any(th for th in self.children if th.is_alive()):
             with ExceptContext(errback=self.log_err):
                 if self.alive:
                     self.logger.debug("Start to fetch proxies. ")
@@ -185,8 +208,8 @@ class ProxyFactory(Service):
                     self.logger.debug("%s proxies found. " % len(proxies))
                     self.proxies_check_in_channel.update(proxies)
 
-            Blocker(self.settings.get_int("FETCH_INTERVAL", 10 * 60)).wait_timeout_or_notify(
-                notify=lambda: not self.alive)
+            Blocker(self.settings.get_int("FETCH_INTERVAL", 10 * 60)).\
+                wait_timeout_or_notify(notify=lambda: not self.alive)
         self.logger.debug("Stop proxy factory. ")
 
     def fetch_all(self):
@@ -199,10 +222,18 @@ class ProxyFactory(Service):
         return proxies
 
     def enrich_parser_arguments(self):
-        self.parser.add_argument("-cm", "--check-method", help="provide a check method to check proxies. eg:module.func")
-        self.parser.add_argument("-sm", "--spider-module",
-                            help="provide a module contains proxy site spider methods. eg:module1.module2")
-        return super(ProxyFactory, self).enrich_parser_arguments()
+        self.parser.add_argument(
+            "-s", "--settings", help="Setting module. ", default=settings)
+        self.parser.add_argument(
+            "-ls", "--localsettings", help="Local setting module.",
+            default="localsettings")
+        self.parser.add_argument(
+            "-cm", "--check-method",
+            help="provide a check method to check proxies. eg:module.func")
+        self.parser.add_argument(
+            "-sm", "--spider-module",
+            help="provide a module contains proxy site spider methods. "
+                 "eg:module1.module2")
 
 
 def main():
