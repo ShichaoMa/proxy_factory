@@ -50,12 +50,6 @@ optional arguments:
 - product -sm spider-module 指定一个自定义的spider模块，存放自定义的spider方法。(只要在sys.path中就可以找到)
 ```
 
-# DOCKER
-
-```python
-docker run -d -e REDIS_HOST=192.168.200.150 cnaafhvk/proxy-factory product start
-```
-
 # CONFIG
 
 ### CUSTOM CHECK
@@ -119,6 +113,14 @@ GOOD_CHECK_INTERVAL = 60
 
 # 抓取新代理的时间间隔
 FETCH_INTERVAL = 60
+
+# redis中用来存放有效代理的set
+GOOD_PROXY_SET = "good_proxies"
+
+# redis中用来存放无效代理的hash
+BAD_PROXY_HASH = "bad_proxies"
+
+
 ```
 
 参考资料
