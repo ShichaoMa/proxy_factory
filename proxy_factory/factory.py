@@ -36,9 +36,9 @@ class ProxyFactory(ParallelMonitor):
         """
         self.enrich_parser_arguments()
         args = self.parser.parse_args()
-        self.settings = SettingsLoader().load(args.localsettings, args.settings)
         cwd = getcwd()
         sys.path.insert(0, cwd)
+        self.settings = SettingsLoader().load(args.localsettings, args.settings)
         self.headers = self.settings.HEADERS
         self.proxies_check_in_channel = ThreadSafeSet()
         self.proxies_check_out_channel = TreadSafeDict()
@@ -129,7 +129,8 @@ class ProxyFactory(ParallelMonitor):
                 continue
 
             with ExceptContext(errback=self.log_err):
-                proxies = self.redis_conn.hgetall("bad_proxies")
+                proxies = self.redis_conn.hgetall(
+                    self.settings.get("BAD_PROXY_HASH", "bad_proxies"))
                 if proxies:
                     self.logger.debug(
                         f"Bad proxy count is: {len(proxies)}, ready to check.")
@@ -150,7 +151,8 @@ class ProxyFactory(ParallelMonitor):
         self.logger.debug("Start good source thread. ")
         while self.alive:
             with ExceptContext(errback=self.log_err):
-                proxies = self.redis_conn.smembers("good_proxies")
+                proxies = self.redis_conn.smembers(
+                    self.settings.get("GOOD_PROXY_SET", "good_proxies"))
                 if proxies:
                     self.logger.debug(
                         f"Good proxy count is: {len(proxies)}, ready to check.")
@@ -171,17 +173,19 @@ class ProxyFactory(ParallelMonitor):
                 proxies = list(self.proxies_check_out_channel.pop_all())
                 if proxies:
                     self.logger.debug(f"Got {len(proxies)} proxies to reset.")
+                    bp = self.settings.get("BAD_PROXY_HASH", "bad_proxies")
+                    gp = self.settings.get("GOOD_PROXY_SET", "good_proxies")
                     for proxy, good in proxies:
                         if good:
-                            self.redis_conn.sadd("good_proxies", proxy)
-                            self.redis_conn.hdel("bad_proxies", proxy)
+                            self.redis_conn.sadd(gp, proxy)
+                            self.redis_conn.hdel(bp, proxy)
                         else:
-                            count = self.redis_conn.hincrby("bad_proxies", proxy)
+                            count = self.redis_conn.hincrby(bp, proxy)
                             if count > self.settings.get_int("FAILED_TIMES", 5):
-                                self.redis_conn.hdel("bad_proxies", proxy)
+                                self.redis_conn.hdel(bp, proxy)
                                 self.logger.debug(
-                                    f"Abandon {proxy} of failed for {count} times.")
-                            self.redis_conn.srem("good_proxies", proxy)
+                                    f"Abandon {proxy} of failed {count} times.")
+                            self.redis_conn.srem(gp, proxy)
                 else:
                     time.sleep(1)
             time.sleep(1)
